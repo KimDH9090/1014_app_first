@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/action_options"
+        android:title="옵션"
+        android:icon="@drawable/ic_settings_24"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/action_rear_ai"
+        android:title="객체 검출(후방)"
+        android:icon="@android:drawable/ic_menu_compass"
+        app:showAsAction="never" />
+</menu>

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/stream_root"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 상단 앱바 -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        style="@style/Widget.Material3.Toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorSurface"
+        android:theme="@style/ThemeOverlay.MaterialComponents.ActionBar"
+        app:navigationIcon="@drawable/ic_home_24"
+        app:title="스트리밍"
+        app:menu="@menu/menu_stream" />
+
+    <!-- 🚨 사고 감지 배너 include (최상단, 영상 위) -->
+    <include
+        android:id="@+id/banner_include"
+        layout="@layout/view_accident_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <!-- 영상 + 오버레이 + FAB -->
+    <FrameLayout
+        android:id="@+id/stream_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- 영상 -->
+        <ImageView
+            android:id="@+id/ivStream"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#000"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/app_name" />
+
+        <!-- 오버레이 -->
+        <com.example.myapplication.smarthelmet.ui.OverlayView
+            android:id="@+id/overlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- ✅ 추가: 후방 객체 인식 진입 버튼 -->
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/fabRearAi"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="객체 인식"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="16dp"
+            app:icon="@android:drawable/ic_menu_compass" />
+    </FrameLayout>
+
+    <!-- 상태 -->
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="대기 중…"
+        android:padding="12dp"/>
+</LinearLayout>

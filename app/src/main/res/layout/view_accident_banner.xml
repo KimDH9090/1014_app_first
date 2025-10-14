@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/txtAccidentBanner"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="사고가 감지되었습니다"
+    android:textColor="#FFFFFF"
+    android:textStyle="bold"
+    android:padding="12dp"
+    android:background="#CCFF3333"
+    android:visibility="gone"
+    android:elevation="24dp"
+    android:translationZ="24dp"
+    android:clickable="false"
+    android:focusable="false"/>

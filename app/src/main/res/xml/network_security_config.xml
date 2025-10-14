@@ -1,0 +1,8 @@
+<!-- app/src/main/res/xml/network_security_config.xml -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.42.0.1</domain>
+        <domain includeSubdomains="true">192.168.4.1</domain>
+        <!-- 필요 시 내부망/테스트 도메인을 여기에 추가 -->
+    </domain-config>
+</network-security-config>

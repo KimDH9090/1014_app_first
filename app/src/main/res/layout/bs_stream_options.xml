@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/colorSurface">
+
+    <!-- 제목 -->
+    <com.google.android.material.textview.MaterialTextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="스트리밍 옵션"
+        android:textAppearance="?attr/textAppearanceTitleLarge"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="?android:attr/textColorPrimary"
+        android:layout_marginBottom="24dp"/>
+
+    <!-- IP 주소 입력 -->
+    <com.google.android.material.textfield.TextInputLayout
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Raspberry Pi IP 주소">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etIp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textUri"
+            android:singleLine="true"
+            android:fontFamily="sans-serif"/>
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- 카메라 소스 선택 -->
+    <com.google.android.material.textview.MaterialTextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="카메라 소스"
+        android:textAppearance="?attr/textAppearanceTitleMedium"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="?android:attr/textColorPrimary"
+        android:layout_marginTop="24dp"/>
+
+    <RadioGroup
+        android:id="@+id/rgSource"
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+
+        <RadioButton
+            android:id="@+id/rbFront"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="전면 (PiCam)"
+            android:checked="true"
+            android:fontFamily="sans-serif"/>
+
+        <RadioButton
+            android:id="@+id/rbUsb"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="후면 (USB)"
+            android:layout_marginStart="16dp"
+            android:fontFamily="sans-serif"/>
+    </RadioGroup>
+
+    <!-- USB 장치 번호 -->
+    <com.google.android.material.textview.MaterialTextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="USB 장치 번호"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:fontFamily="sans-serif"
+        android:layout_marginTop="16dp"/>
+
+    <Spinner
+        android:id="@+id/spUsbDev"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        style="@style/Widget.AppCompat.Spinner.Underlined"/>
+
+    <!-- 전면 카메라 색상 스왑 -->
+    <com.google.android.material.textview.MaterialTextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="전면 카메라 색상 스왑"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:fontFamily="sans-serif"
+        android:layout_marginTop="16dp"/>
+
+    <Spinner
+        android:id="@+id/spSwap"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        style="@style/Widget.AppCompat.Spinner.Underlined"/>
+
+    <!-- 확인/취소 버튼 -->
+    <LinearLayout
+        android:orientation="horizontal"
+        android:gravity="end"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCancel"
+            android:text="취소"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:strokeColor="@android:color/darker_gray"
+            android:textColor="@android:color/darker_gray"
+            style="?attr/materialButtonOutlinedStyle"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnApply"
+            android:text="적용"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            app:backgroundTint="@android:color/darker_gray"/>
+    </LinearLayout>
+</LinearLayout>
+

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/initFragment">
+
+    <fragment
+        android:id="@+id/initFragment"
+        android:name="com.example.myapplication.smarthelmet.InitFragment"
+        android:label="Init" >
+        <action
+            android:id="@+id/action_to_guide"
+            app:destination="@id/rideGuideFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/rideGuideFragment"
+        android:name="com.example.myapplication.smarthelmet.RideGuideFragment"
+        android:label="Ride" />
+</navigation>

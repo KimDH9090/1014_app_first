@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material 3 + NoActionBar: 상단바는 우리가 넣은 MaterialToolbar가 담당 -->
+    <style name="Theme.MyApplication" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- 컬러 커스터마이즈(원하는 경우에만) -->
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/teal_200</item>
+
+        <!-- (선택) 엣지-투-엣지 느낌 원하면 아래 3줄 -->
+        <!-- <item name="android:statusBarColor">@android:color/transparent</item> -->
+        <!-- <item name="android:navigationBarColor">@android:color/transparent</item> -->
+        <!-- <item name="android:windowLightStatusBar">true</item> -->
+    </style>
+</resources>
