@@ -31,7 +31,7 @@
 
     <!-- 차선/표시 오버레이: 배너 아래에만 표시 (중요!) -->
     <ImageView
-        android:id="@+id/overlayView"
+        android:id="@+id/ipcamView"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:background="@android:color/transparent"

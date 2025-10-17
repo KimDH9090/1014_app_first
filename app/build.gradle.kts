@@ -105,8 +105,10 @@ dependencies {
     implementation("com.google.dagger:hilt-android:2.51")
     kapt("com.google.dagger:hilt-compiler:2.51")
 
-    // --- TFLite (공통 포함) ---
+// --- TFLite / OpenCV ---
     implementation("org.tensorflow:tensorflow-lite:2.10.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.10.0")
+    implementation("org.opencv:opencv:4.9.0")
 
     // --- 테스트 ---
     testImplementation(libs.junit)
