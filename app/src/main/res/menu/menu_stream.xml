@@ -7,9 +7,4 @@
         android:icon="@drawable/ic_settings_24"
         app:showAsAction="always" />
 
-    <item
-        android:id="@+id/action_rear_ai"
-        android:title="객체 검출(후방)"
-        android:icon="@android:drawable/ic_menu_compass"
-        app:showAsAction="never" />
 </menu>

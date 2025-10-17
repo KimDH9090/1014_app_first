@@ -48,15 +48,11 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- ✅ 추가: 후방 객체 인식 진입 버튼 -->
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/fabRearAi"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="객체 인식"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="16dp"
-            app:icon="@android:drawable/ic_menu_compass" />
+        <com.example.myapplication.smarthelmet.ui.RearDetectionOverlayView
+            android:id="@+id/rearDetectionOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
     </FrameLayout>
 
     <!-- 상태 -->

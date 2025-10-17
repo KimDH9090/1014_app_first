@@ -49,7 +49,7 @@
 
         <!-- 후방 객체 검출(Compose + TFLite) -->
         <activity
-            android:name="com.example.myapplication.smarthelmet.rear.RearCamTestActivity"
+            android:name="com.example.myapplication.smarthelmet.record.RearCamTestActivity"
             android:exported="false"
             android:label="후방 객체 검출" />
 

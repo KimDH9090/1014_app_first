@@ -1,7 +1,6 @@
 // app/src/main/java/com/example/myapplication/smarthelmet/StreamActivity.kt
 package com.example.myapplication.smarthelmet
 
-import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.SystemClock
@@ -20,16 +19,20 @@ import com.example.myapplication.databinding.ActivityStreamBinding
 import com.example.myapplication.smarthelmet.processing.FrameProcessor
 import com.example.myapplication.smarthelmet.processing.LaneProcessorLite
 import com.example.myapplication.smarthelmet.ui.OverlayModel
+import com.example.myapplication.smarthelmet.ui.RearDetectionOverlayView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collectLatest
 
 // 🚨 사고 폴링 + 배너 컨트롤러
 import com.example.myapplication.smarthelmet.accident.SagoStatusPoller
 import com.example.myapplication.smarthelmet.accident.AccidentBannerController
+import com.example.myapplication.smarthelmet.RearCamDetectionManager
+import com.example.myapplication.smarthelmet.record.RearCamDetectionEngine
 
 class StreamActivity : AppCompatActivity() {
 
@@ -53,6 +56,10 @@ class StreamActivity : AppCompatActivity() {
     private var processor: FrameProcessor? = null
     private var lastProcMs: Long = 0L
 
+    private var rearOverlay: RearDetectionOverlayView? = null
+    private var detectionCollectJob: Job? = null
+    private var lastRearDetection: RearCamDetectionEngine.RearDetectionResult? = null
+
     // 🚨 배너 & 폴러
     private var txtAccidentBanner: TextView? = null
     private var sagoPoller: SagoStatusPoller? = null
@@ -63,6 +70,8 @@ class StreamActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         vb = ActivityStreamBinding.inflate(layoutInflater)
         setContentView(vb.root)
+
+        rearOverlay = findViewById(R.id.rearDetectionOverlay)
 
         // 화면 꺼짐 방지
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -75,20 +84,11 @@ class StreamActivity : AppCompatActivity() {
             override fun handleOnBackPressed() { finish() }
         })
 
-        // 우측 메뉴(옵션 / 객체 검출 진입)
+        // 우측 메뉴(옵션)
         vb.toolbar.setOnMenuItemClickListener {
             when (it.itemId) {
                 R.id.action_options -> {
                     showOptionsSheet()
-                    true
-                }
-                R.id.action_rear_ai -> {
-                    startActivity(
-                        Intent(
-                            this,
-                            com.example.myapplication.smarthelmet.rear.RearCamTestActivity::class.java
-                        )
-                    )
                     true
                 }
                 else -> false
@@ -163,6 +163,14 @@ class StreamActivity : AppCompatActivity() {
                 }
             )
         }
+
+        detectionCollectJob = lifecycleScope.launch {
+            RearCamDetectionManager.state.collectLatest { result ->
+                lastRearDetection = result
+                renderRearDetections()
+            }
+        }
+        renderRearDetections()
     }
 
     override fun onStop() {
@@ -174,6 +182,10 @@ class StreamActivity : AppCompatActivity() {
         autoHideJob?.cancel(); autoHideJob = null
 
         bannerController?.dispose(); bannerController = null
+
+        detectionCollectJob?.cancel(); detectionCollectJob = null
+        rearOverlay?.submit(null)
+        rearOverlay?.visibility = View.GONE
 
         super.onStop()
     }
@@ -192,12 +204,15 @@ class StreamActivity : AppCompatActivity() {
         lastIpOnly = ip
         currentCam = Cam.FRONT
         currentUsbDev = null
+        PiEndpoint.saveHost(this, ip)
+        RearCamDetectionManager.refreshIfRunning(this)
         prefs.edit { putString("pi_ip", ip) }
         frontSwap = s
 
         // 전면: 라이트 차선 가이드 활성화
         processor = LaneProcessorLite()
         startStream(url)
+        renderRearDetections()
     }
 
     private fun startRear(ip: String) {
@@ -206,11 +221,14 @@ class StreamActivity : AppCompatActivity() {
         lastIpOnly = ip
         currentCam = Cam.REAR
         currentUsbDev = 2
+        PiEndpoint.saveHost(this, ip)
+        RearCamDetectionManager.refreshIfRunning(this)
         prefs.edit { putString("pi_ip", ip) }
 
         // 후면: 일단 처리 비활성
         processor = null
         startStream(url)
+        renderRearDetections()
     }
 
     private fun startUsb(ip: String, dev: Int) {
@@ -220,11 +238,14 @@ class StreamActivity : AppCompatActivity() {
         lastIpOnly = ip
         currentCam = if (dev == 2) Cam.REAR else Cam.USB_OTHER
         currentUsbDev = dev
+        PiEndpoint.saveHost(this, ip)
+        RearCamDetectionManager.refreshIfRunning(this)
         prefs.edit { putString("pi_ip", ip) }
 
         // USB 기타: 기본 비활성
         processor = null
         startStream(url)
+        renderRearDetections()
     }
 
     private fun startStream(url: String) {
@@ -253,11 +274,28 @@ class StreamActivity : AppCompatActivity() {
                         vb.overlay.submit(overlay)
                     }
                 }
+                val w = bmp.width
+                val h = bmp.height
+                rearOverlay?.post {
+                    rearOverlay?.updateSourceSize(w, h)
+                }
             },
             onStatus = { s ->
                 vb.tvStatus.post { vb.tvStatus.text = s }
             }
         ).also { it.start() }
+    }
+
+    private fun renderRearDetections() {
+        val overlay = rearOverlay ?: return
+        val shouldShow = currentCam == Cam.REAR
+        val result = if (shouldShow) lastRearDetection else null
+        overlay.submit(result)
+        overlay.visibility = when {
+            !shouldShow -> View.GONE
+            result == null || result.detections.isEmpty() -> View.INVISIBLE
+            else -> View.VISIBLE
+        }
     }
 
     private fun setSubtitle(text: String) {

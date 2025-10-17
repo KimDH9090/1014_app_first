@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 import com.example.myapplication.smarthelmet.accident.SagoStatusPoller
 // ★ 사고 배너 컨트롤러 (30초 후 자동 “119에 자동신고되었습니다”로 변경)
 import com.example.myapplication.smarthelmet.accident.AccidentBannerController
+import com.example.myapplication.smarthelmet.RearCamDetectionManager
 
 class InitFragment : Fragment() {
 
@@ -210,6 +211,7 @@ class InitFragment : Fragment() {
     private fun finishUnlock(runId: Long) {
         if (!isMyRun(runId)) return
         toast("대여가 시작되었습니다!")
+        RearCamDetectionManager.start(requireContext())
 
         // Fragment state 저장 이후 navigate 경고 방지
         viewLifecycleOwner.lifecycleScope.launch {
@@ -307,6 +309,7 @@ class InitFragment : Fragment() {
     private fun finishLock(runId: Long) {
         if (!isMyRun(runId)) return
         toast("반납이 완료되었습니다. 감사합니다!")
+        RearCamDetectionManager.stop()
         watchJob?.cancel(); watchJob = null
         sentLockGo2 = false; seenLockBack1 = false
     }
