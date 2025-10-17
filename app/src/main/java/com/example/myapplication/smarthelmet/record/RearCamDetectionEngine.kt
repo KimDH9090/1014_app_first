@@ -103,8 +103,8 @@ class RearCamDetectionEngine(
                         val input = BufferedInputStream(resp.body!!.byteStream(), 64 * 1024)
                         readMjpeg(input, onFrame, onDetections)
                     }
-                } catch (_: CancellationException) {
-                    throw
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Throwable) {
                     if (!ctx.isActive) break
                     delay(300)

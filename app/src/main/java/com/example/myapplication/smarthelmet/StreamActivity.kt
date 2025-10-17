@@ -16,6 +16,7 @@ import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.R
 import com.example.myapplication.databinding.ActivityStreamBinding
+import com.example.myapplication.smarthelmet.MjpegReader
 import com.example.myapplication.smarthelmet.processing.FrameProcessor
 import com.example.myapplication.smarthelmet.processing.LaneProcessorLite
 import com.example.myapplication.smarthelmet.ui.OverlayModel
