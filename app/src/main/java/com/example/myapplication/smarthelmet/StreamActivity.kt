@@ -54,7 +54,7 @@ class StreamActivity : AppCompatActivity() {
 
     // 전면 색상 스왑 값 유지
     private var frontSwap: Int
-        get() = prefs.getInt("front_swap", 1)
+        get() = prefs.getInt("front_swap", 0)
         set(v) { prefs.edit { putInt("front_swap", if (v != 0) 1 else 0) } }
 
     // 전면 차선 가이드용 처리 상태
@@ -83,6 +83,7 @@ class StreamActivity : AppCompatActivity() {
     // 🚨 사고 알림 폴러
     private var sagoPoller: SagoStatusPoller? = null
     private var alertController: AccidentAlertController? = null
+    private val PREF_LAST_SAGO_TS = "last_sago_ts"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,7 +122,10 @@ class StreamActivity : AppCompatActivity() {
             context = this,
             autoReportDelayMs = 30_000L,
             onRequirePause = { sagoPoller?.pause() },
-            onAllowResume = { sagoPoller?.resume() }
+            onAllowResume = { sagoPoller?.resume() },
+            onHandled = { ts ->
+                recordSagoHandled(ts)
+            }
         )
 
         // 자동 전면 재생: Intent PI_IP → 저장된 IP → 없으면 옵션 표시
@@ -145,6 +149,7 @@ class StreamActivity : AppCompatActivity() {
         // 🚨 라즈베리파이 sago 상태 폴링 시작 (포트 5001: /accident/status)
         val baseUrlSago = "http://10.42.0.1:5001"
         sagoPoller = SagoStatusPoller(lifecycleScope, baseUrlSago, intervalMs = 1000L).also { poller ->
+            poller.setBaseline(loadLastSagoTs())
             poller.start(
                 onNewSago = { ts ->
                     // 컨트롤러가 즉시 팝업을 띄우고 30초 후 자동 신고 안내로 전환
@@ -319,6 +324,17 @@ class StreamActivity : AppCompatActivity() {
 
     private fun setSubtitle(text: String) {
         vb.toolbar.subtitle = text
+    }
+
+    private fun recordSagoHandled(ts: String) {
+        saveLastSagoTs(ts)
+        sagoPoller?.setBaseline(ts)
+    }
+
+    private fun loadLastSagoTs(): String? = prefs.getString(PREF_LAST_SAGO_TS, null)
+
+    private fun saveLastSagoTs(ts: String) {
+        prefs.edit { putString(PREF_LAST_SAGO_TS, ts) }
     }
 
     // 옵션 시트

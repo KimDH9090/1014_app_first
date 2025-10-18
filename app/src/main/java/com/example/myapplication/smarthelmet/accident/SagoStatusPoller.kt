@@ -63,6 +63,10 @@ class SagoStatusPoller(
         }
     }
 
+    fun setBaseline(ts: String?) {
+        lastSeenTs = ts
+    }
+
     fun stop() {
         running = false
         job?.cancel()

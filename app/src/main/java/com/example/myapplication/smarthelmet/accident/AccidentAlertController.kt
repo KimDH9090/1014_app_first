@@ -1,3 +1,4 @@
+// app/src/main/java/com/example/myapplication/smarthelmet/accident/AccidentAlertController.kt
 package com.example.myapplication.smarthelmet.accident
 
 import android.content.Context
@@ -27,7 +28,8 @@ class AccidentAlertController(
     private val context: Context,
     private val autoReportDelayMs: Long = 30_000L,
     private val onRequirePause: () -> Unit = {},
-    private val onAllowResume: () -> Unit = {}
+    private val onAllowResume: () -> Unit = {},
+    private val onHandled: (String) -> Unit = {}
 ) {
     private enum class Phase { IDLE, ALERT, REPORT }
 
@@ -35,13 +37,15 @@ class AccidentAlertController(
     private var dialog: AlertDialog? = null
     private var messageView: TextView? = null
     private var timerJob: Job? = null
+    private var activeTs: String? = null
 
     /** 새 사고 타임스탬프 수신 시 호출 */
-    fun onAccident(@Suppress("UNUSED_PARAMETER") tsIsoUtc: String) {
+    fun onAccident(tsIsoUtc: String) {
         if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
         if (phase != Phase.IDLE) return
 
         phase = Phase.ALERT
+        activeTs = tsIsoUtc
         onRequirePause.invoke()
         showAlertDialog()
     }
@@ -132,7 +136,10 @@ class AccidentAlertController(
         timerJob?.cancel()
         timerJob = null
         phase = Phase.IDLE
+        val handledTs = activeTs
+        activeTs = null
         dismissDialog()
+        handledTs?.let { onHandled(it) }
         if (resumePolling) {
             onAllowResume.invoke()
         }
