@@ -1,4 +1,3 @@
-// app/src/main/java/com/example/myapplication/smarthelmet/accident/AccidentAlertController.kt
 package com.example.myapplication.smarthelmet.accident
 
 import android.content.Context

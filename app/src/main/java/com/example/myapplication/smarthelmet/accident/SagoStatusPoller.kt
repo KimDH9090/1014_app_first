@@ -11,7 +11,8 @@ import java.util.concurrent.TimeUnit
 class SagoStatusPoller(
     private val scope: CoroutineScope,
     private val baseUrl: String,              // 예: "http://10.42.0.1:5001"
-    private val intervalMs: Long = 1000L      // 폴링 간격(1초)
+    private val intervalMs: Long = 1000L,     // 폴링 간격(1초)
+    private val minIntervalMs: Long = 0L      // 이벤트 재발행 최소 간격
 ) {
     private val client = OkHttpClient.Builder()
         .retryOnConnectionFailure(true)
@@ -23,10 +24,12 @@ class SagoStatusPoller(
     @Volatile private var running = false
     @Volatile private var paused = false
     private var lastSeenTs: String? = null
+    private var lastDispatchElapsed: Long = 0L
 
     fun start(
         onNewSago: (String) -> Unit,          // 새 sago 발생 시(ISO-UTC 타임스탬프 전달)
-        onError: (Throwable) -> Unit = {}     // 네트워크 에러 등
+        onError: (Throwable) -> Unit = {},    // 네트워크 에러 등
+        onSuppressed: (String) -> Unit = {}   // 쿨다운으로 무시된 이벤트
     ) {
         if (running) return
         paused = false
@@ -51,7 +54,13 @@ class SagoStatusPoller(
                             val ts   = json.optString("last_sago_ts", "")
                             if (sago && ts.isNotBlank() && ts != lastSeenTs) {
                                 lastSeenTs = ts
-                                withContext(Dispatchers.Main) { onNewSago(ts) }
+                                val now = android.os.SystemClock.elapsedRealtime()
+                                if (minIntervalMs <= 0L || now - lastDispatchElapsed >= minIntervalMs) {
+                                    lastDispatchElapsed = now
+                                    withContext(Dispatchers.Main) { onNewSago(ts) }
+                                } else {
+                                    withContext(Dispatchers.Main) { onSuppressed(ts) }
+                                }
                             }
                         }
                     }

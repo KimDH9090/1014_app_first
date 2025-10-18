@@ -83,6 +83,7 @@ class StreamActivity : AppCompatActivity() {
     // 🚨 사고 알림 폴러
     private var sagoPoller: SagoStatusPoller? = null
     private var alertController: AccidentAlertController? = null
+    private val SAGO_COOLDOWN_MS = 3_000L
     private val PREF_LAST_SAGO_TS = "last_sago_ts"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,7 +117,7 @@ class StreamActivity : AppCompatActivity() {
             }
         }
 
-        // ✅ 사고 팝업 컨트롤러(30초 후 자동 신고 안내)
+// ✅ 사고 팝업 컨트롤러(30초 후 자동 신고 안내)
         alertController = AccidentAlertController(
             lifecycleOwner = this,
             context = this,
@@ -148,12 +149,22 @@ class StreamActivity : AppCompatActivity() {
 
         // 🚨 라즈베리파이 sago 상태 폴링 시작 (포트 5001: /accident/status)
         val baseUrlSago = "http://10.42.0.1:5001"
-        sagoPoller = SagoStatusPoller(lifecycleScope, baseUrlSago, intervalMs = 1000L).also { poller ->
+        sagoPoller = SagoStatusPoller(
+            scope = lifecycleScope,
+            baseUrl = baseUrlSago,
+            intervalMs = 1000L,
+            minIntervalMs = SAGO_COOLDOWN_MS
+        ).also { poller ->
             poller.setBaseline(loadLastSagoTs())
             poller.start(
                 onNewSago = { ts ->
                     // 컨트롤러가 즉시 팝업을 띄우고 30초 후 자동 신고 안내로 전환
                     alertController?.onAccident(ts)
+                },
+                onError = { e -> e.printStackTrace() },
+                onSuppressed = { ts ->
+                    // 3초 쿨다운 동안 들어온 신호는 기록만 남기고 팝업을 띄우지 않는다.
+                    recordSagoHandled(ts)
                 }
             )
         }
@@ -459,7 +470,6 @@ class StreamActivity : AppCompatActivity() {
             rVal = hist[x]
             rPeak = x
         }
-
         val corridor = (w * CORRIDOR_W_RATIO).toInt().coerceAtLeast(8)
         val corridorMask = Mat.zeros(roiEdges.size(), CvType.CV_8UC1)
         Imgproc.rectangle(
