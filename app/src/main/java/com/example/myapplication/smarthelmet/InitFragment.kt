@@ -45,7 +45,6 @@ class InitFragment : Fragment() {
 
     // ★ 라즈베리파이 사고 상태 폴링
     private var sagoPoller: SagoStatusPoller? = null
-
     // ★ 배너 문구 자동 전환 컨트롤러
     private var bannerController: AccidentAlertController? = null
 
