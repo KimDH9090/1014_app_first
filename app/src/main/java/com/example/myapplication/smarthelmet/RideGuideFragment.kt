@@ -61,10 +61,10 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
     private var sentUnlockGo2 = false
     private var sentLockGo2 = false
 
-    // 사고 알림 풀러
+    // 사고 알림 폴러
     private var sagoPoller: SagoStatusPoller? = null
 
-    // 배너 문구 자동 전환 컨트롤러 (5초 후 119)
+    // 사고 알림 팝업 컨트롤러 (30초 후 자동 신고 안내)
     private var bannerController: AccidentAlertController? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -76,11 +76,13 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         playerView = view.findViewById(R.id.playerView)
         loadingIndicator = view.findViewById(R.id.loadingIndicator)
 
-        // ✅ 컨트롤러: 5초 후 자동 119 문구
+        // 사고 알림 팝업 컨트롤러 (30초 후 자동 신고 안내)
         bannerController = AccidentAlertController(
             lifecycleOwner = viewLifecycleOwner,
             context = requireContext(),
-            autoReportDelayMs = 5_000L
+            autoReportDelayMs = 30_000L,
+            onRequirePause = { sagoPoller?.pause() },
+            onAllowResume = { sagoPoller?.resume() }
         )
 
         // --- 호스트/포트 구성 ---
@@ -385,7 +387,7 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         sagoPoller = SagoStatusPoller(viewLifecycleOwner.lifecycleScope, baseUrlSago, 1000L).also { poller ->
             poller.start(
                 onNewSago = { ts ->
-                    // ✅ 컨트롤러가 5초 후 자동으로 “119에 자동신고되었습니다”로 전환
+                    // ✅ 팝업 표시 및 30초 후 자동 신고 알림 전환
                     bannerController?.onAccident(ts)
                 }
             )

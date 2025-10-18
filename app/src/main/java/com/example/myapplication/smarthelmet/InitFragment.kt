@@ -62,11 +62,13 @@ class InitFragment : Fragment() {
         btnUse.setOnClickListener { startUseFlow() }
         btnReturn.setOnClickListener { startReturnFlow() }
 
-        // ★ 배너 컨트롤러 생성 (사고 감지 즉시 표출 → 30초 후 자동 ‘119에 자동신고되었습니다’)
+        // ★ 사고 팝업 컨트롤러 생성 (사고 감지 즉시 표출 → 30초 후 자동 신고 안내)
         bannerController = AccidentAlertController(
             lifecycleOwner = viewLifecycleOwner,
             context = requireContext(),
-            autoReportDelayMs = 5_000L
+            autoReportDelayMs = 30_000L,
+            onRequirePause = { sagoPoller?.pause() },
+            onAllowResume = { sagoPoller?.resume() }
         )
     }
 
@@ -79,7 +81,7 @@ class InitFragment : Fragment() {
             poller.start(
                 onNewSago = { ts ->
                     if (!isAdded) return@start
-                    // 컨트롤러로 문구 자동 전환(30초 후 119 안내)
+                    // 컨트롤러로 팝업 전환(30초 후 자동 신고 안내)
                     bannerController?.onAccident(ts)
                 },
                 onError = {

@@ -92,11 +92,13 @@ class StreamActivity : AppCompatActivity() {
             }
         }
 
-        // ✅ 배너 자동 전환 컨트롤러(5초 후 "119에 자동신고되었습니다")
+        // ✅ 사고 팝업 컨트롤러(30초 후 자동 신고 안내)
         bannerController = AccidentAlertController(
             lifecycleOwner = this,
             context = this,
-            autoReportDelayMs = 5_000L
+            autoReportDelayMs = 30_000L,
+            onRequirePause = { sagoPoller?.pause() },
+            onAllowResume = { sagoPoller?.resume() }
         )
 
         // 자동 전면 재생: Intent PI_IP → 저장된 IP → 없으면 옵션 표시
@@ -122,7 +124,7 @@ class StreamActivity : AppCompatActivity() {
         sagoPoller = SagoStatusPoller(lifecycleScope, baseUrlSago, intervalMs = 1000L).also { poller ->
             poller.start(
                 onNewSago = { ts ->
-                    // 컨트롤러가 즉시 "사고가 감지되었습니다" 표시 → 5초 후 자동 "119에 자동신고되었습니다"
+                    // 컨트롤러가 즉시 팝업을 띄우고 30초 후 자동 신고 안내로 전환
                     bannerController?.onAccident(ts)
                 }
             )
