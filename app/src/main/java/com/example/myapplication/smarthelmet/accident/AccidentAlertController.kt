@@ -1,11 +1,7 @@
 package com.example.myapplication.smarthelmet.accident
 
 import android.content.Context
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.os.Looper
-import android.view.ViewGroup
-import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -18,124 +14,138 @@ import kotlinx.coroutines.withContext
 
 /**
  * 사고 알림 팝업 컨트롤러
- * - 최초 감지 즉시 팝업으로 "사고가 감지되었습니다" 표출
- * - autoReportDelayMs 후 "119에 자동신고되었습니다"로 문구 전환
- * - 동일 사고 진행 중 중복 이벤트는 무시
+ * 1. Raspberry Pi에서 새로운 "sago" 이벤트를 받으면 즉시 팝업을 띄운다.
+ * 2. 사용자가 "사고 아님"을 누르면 팝업을 닫고 상태를 초기화한다.
+ * 3. 30초가 지나도록 사용자가 응답하지 않으면 "119 신고" 안내 팝업으로 전환한다.
+ *    팝업이 활성화된 동안에는 사고 폴러를 일시 정지시켜 중복 이벤트가 쌓이지 않도록 한다.
  */
 class AccidentAlertController(
     private val lifecycleOwner: LifecycleOwner,
     private val context: Context,
-    private val autoReportDelayMs: Long = 5_000L
+    private val autoReportDelayMs: Long = 30_000L,
+    private val onRequirePause: () -> Unit = {},
+    private val onAllowResume: () -> Unit = {}
 ) {
-    private enum class Phase { IDLE, ALARM_SHOWN, REPORTED }
+    private enum class Phase { IDLE, ALERT, REPORT }
 
     private var phase: Phase = Phase.IDLE
-    private var job: Job? = null
     private var dialog: AlertDialog? = null
-
-    private val messageView: TextView by lazy {
-        TextView(context).apply {
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-        }
-    }
+    private var timerJob: Job? = null
 
     /** 새 사고 타임스탬프 수신 시 호출 */
     fun onAccident(@Suppress("UNUSED_PARAMETER") tsIsoUtc: String) {
         if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
+        if (phase != Phase.IDLE) return
 
-        when (phase) {
-            Phase.IDLE -> {
-                phase = Phase.ALARM_SHOWN
-                show("사고가 감지되었습니다", "#CCFF3333")
-                job?.cancel()
-                job = lifecycleOwner.lifecycleScope.launch {
-                    delay(autoReportDelayMs)
-                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-                        withContext(Dispatchers.Main) {
-                            showInternal("119에 자동신고되었습니다", "#CCFF9900")
-                            phase = Phase.REPORTED
-                        }
-                    }
-                }
-            }
-            Phase.ALARM_SHOWN, Phase.REPORTED -> {
-                // 진행 중이면 타이머/문구 유지
-            }
-        }
+        phase = Phase.ALERT
+        onRequirePause.invoke()
+        scheduleAutoReport()
+        showAlertDialog()
     }
 
-    /** 다음 사고를 수용하고 싶을 때 호출 */
+    /** 사용자 확인 등으로 다음 사고를 수용하고 싶을 때 호출 */
     fun reset() {
-        job?.cancel(); job = null
-        phase = Phase.IDLE
-        hide()
+        resetInternal(resumePolling = true)
     }
 
     fun dispose() {
-        job?.cancel(); job = null
-        phase = Phase.IDLE
-        hide()
+        resetInternal(resumePolling = true)
     }
 
-    private fun show(text: String, color: String) {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            showInternal(text, color)
-        } else {
-            lifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
-                showInternal(text, color)
+    private fun scheduleAutoReport() {
+        timerJob?.cancel()
+        timerJob = lifecycleOwner.lifecycleScope.launch {
+            delay(autoReportDelayMs)
+            if (phase == Phase.ALERT && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                withContext(Dispatchers.Main) { showReportDialog() }
             }
         }
     }
 
-    private fun showInternal(text: String, color: String) {
-        val parsed = Color.parseColor(color)
-        val tv = messageView
+    private fun showAlertDialog() {
+        runOnMain {
+            dismissDialog()
+            val dlg = AlertDialog.Builder(context)
+                .setMessage("사고가 감지되었습니다")
+                .setPositiveButton("사고 아님", null)
+                .setCancelable(false)
+                .create()
 
-        // AlertDialog#setView 는 부모가 없는 뷰만 허용하므로 선행 분리
-        (tv.parent as? ViewGroup)?.removeView(tv)
-
-        tv.text = text
-        tv.setBackgroundColor(parsed)
-
-        val dlg = dialog ?: AlertDialog.Builder(context)
-            .setView(tv)
-            .setCancelable(true)
-            .create()
-            .also { created ->
-                created.setOnDismissListener {
-                    dialog = null
-                    if (phase != Phase.REPORTED) {
-                        phase = Phase.IDLE
-                    }
+            dlg.setCanceledOnTouchOutside(false)
+            dlg.setOnShowListener {
+                dlg.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
+                    handleUserDismiss()
                 }
-                dialog = created
+            }
+            dlg.setOnDismissListener {
+                dialog = null
+                if (phase == Phase.ALERT) {
+                    handleUserDismiss()
+                }
             }
 
-        dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dlg.setCanceledOnTouchOutside(true)
-        if (!dlg.isShowing) {
+            dialog = dlg
             dlg.show()
         }
-        dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
     }
 
-    private fun hide() {
-        val action = {
-            dialog?.setOnDismissListener(null)
-            dialog?.dismiss()
-            dialog = null
+    private fun showReportDialog() {
+        phase = Phase.REPORT
+        runOnMain {
+            dismissDialog()
+            val dlg = AlertDialog.Builder(context)
+                .setMessage("119 신고")
+                .setPositiveButton("확인", null)
+                .setCancelable(false)
+                .create()
+
+            dlg.setCanceledOnTouchOutside(false)
+            dlg.setOnShowListener {
+                dlg.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
+                    completeReport()
+                }
+            }
+            dlg.setOnDismissListener {
+                dialog = null
+                if (phase == Phase.REPORT) {
+                    completeReport()
+                }
+            }
+
+            dialog = dlg
+            dlg.show()
         }
+    }
+
+    private fun handleUserDismiss() {
+        resetInternal(resumePolling = true)
+    }
+
+    private fun completeReport() {
+        resetInternal(resumePolling = true)
+    }
+
+    private fun resetInternal(resumePolling: Boolean) {
+        timerJob?.cancel()
+        timerJob = null
+        phase = Phase.IDLE
+        dismissDialog()
+        if (resumePolling) {
+            onAllowResume.invoke()
+        }
+    }
+
+    private fun dismissDialog() {
+        dialog?.setOnDismissListener(null)
+        dialog?.dismiss()
+        dialog = null
+    }
+
+    private fun runOnMain(block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            action()
+            block()
         } else {
-            lifecycleOwner.lifecycleScope.launch(Dispatchers.Main) { action() }
+            lifecycleOwner.lifecycleScope.launch(Dispatchers.Main) { block() }
         }
-    }
-
-    private fun dp(v: Int): Int {
-        val density = context.resources.displayMetrics.density
-        return (v * density + 0.5f).toInt()
     }
 }
