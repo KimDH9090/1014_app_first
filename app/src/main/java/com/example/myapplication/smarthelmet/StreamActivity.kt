@@ -5,10 +5,8 @@ import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ArrayAdapter
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -31,7 +29,7 @@ import kotlinx.coroutines.flow.collectLatest
 
 // 🚨 사고 폴링 + 배너 컨트롤러
 import com.example.myapplication.smarthelmet.accident.SagoStatusPoller
-import com.example.myapplication.smarthelmet.accident.AccidentBannerController
+import com.example.myapplication.smarthelmet.accident.AccidentAlertController
 import com.example.myapplication.smarthelmet.RearCamDetectionManager
 import com.example.myapplication.smarthelmet.record.RearCamDetectionEngine
 
@@ -61,11 +59,9 @@ class StreamActivity : AppCompatActivity() {
     private var detectionCollectJob: Job? = null
     private var lastRearDetection: RearCamDetectionEngine.RearDetectionResult? = null
 
-    // 🚨 배너 & 폴러
-    private var txtAccidentBanner: TextView? = null
+    // 🚨 사고 알림 폴러
     private var sagoPoller: SagoStatusPoller? = null
-    private var autoHideJob: Job? = null
-    private var bannerController: AccidentBannerController? = null
+    private var bannerController: AccidentAlertController? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,38 +92,10 @@ class StreamActivity : AppCompatActivity() {
             }
         }
 
-        // ✅ 배너 참조: include 존재 시 사용, 없으면 동적 추가
-        txtAccidentBanner = findViewById(R.id.txtAccidentBanner)
-        if (txtAccidentBanner == null) {
-            val root = vb.root as ViewGroup
-            val banner = TextView(this).apply {
-                id = View.generateViewId()
-                text = "사고가 감지되었습니다"
-                setTextColor(0xFFFFFFFF.toInt())
-                textSize = 18f
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                setBackgroundColor(0xCCFF3333.toInt())
-                elevation = 24f
-                translationZ = 24f
-                visibility = View.GONE
-                isClickable = false
-                isFocusable = false
-            }
-            // Toolbar 바로 아래 인덱스에 삽입
-            root.addView(banner, /* index = */ minOf(1, root.childCount))
-            txtAccidentBanner = banner
-        }
-        // 진입 시 배너 초기화
-        txtAccidentBanner?.apply {
-            text = "사고가 감지되었습니다"
-            visibility = View.GONE
-            bringToFront()
-        }
-
         // ✅ 배너 자동 전환 컨트롤러(5초 후 "119에 자동신고되었습니다")
-        bannerController = AccidentBannerController(
+        bannerController = AccidentAlertController(
             lifecycleOwner = this,
-            bannerView = requireNotNull(txtAccidentBanner),
+            context = this,
             autoReportDelayMs = 5_000L
         )
 
@@ -146,13 +114,8 @@ class StreamActivity : AppCompatActivity() {
             startStream(lastUrl!!)
         }
 
-        // ✅ 컨트롤러/배너 리셋(이전 잔여 텍스트 방지)
+        // ✅ 컨트롤러 리셋(이전 팝업 상태 초기화)
         bannerController?.reset()
-        txtAccidentBanner?.apply {
-            text = "사고가 감지되었습니다"
-            visibility = View.GONE
-            bringToFront()
-        }
 
         // 🚨 라즈베리파이 sago 상태 폴링 시작 (포트 5001: /accident/status)
         val baseUrlSago = "http://10.42.0.1:5001"
@@ -180,8 +143,6 @@ class StreamActivity : AppCompatActivity() {
 
         // 폴러/배너 정리
         sagoPoller?.stop(); sagoPoller = null
-        autoHideJob?.cancel(); autoHideJob = null
-
         bannerController?.dispose(); bannerController = null
 
         detectionCollectJob?.cancel(); detectionCollectJob = null
@@ -357,26 +318,5 @@ class StreamActivity : AppCompatActivity() {
 
         dlg.show()
     }
-
-    // (남겨둔) 배너 표시 유틸 — 다른 경로에서 쓸 수 있음
-    private fun showAccidentBanner(text: String) {
-        val banner = txtAccidentBanner ?: return
-        banner.text = text
-        banner.visibility = View.VISIBLE
-        banner.alpha = 0f
-        banner.bringToFront()
-        banner.animate().alpha(1f).setDuration(180).start()
-
-        autoHideJob?.cancel()
-        autoHideJob = lifecycleScope.launch {
-            delay(6000)
-            banner.visibility = View.GONE
-        }
-    }
-
-    // dp 유틸
-    private fun dp(v: Int): Int {
-        val d = resources.displayMetrics.density
-        return (v * d + 0.5f).toInt()
-    }
+    
 }

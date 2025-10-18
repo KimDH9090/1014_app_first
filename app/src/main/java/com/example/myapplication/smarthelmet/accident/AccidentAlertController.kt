@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Looper
+import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.Lifecycle
@@ -13,7 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContex
+import kotlinx.coroutines.withContext
 
 /**
  * 사고 알림 팝업 컨트롤러
@@ -21,7 +22,7 @@ import kotlinx.coroutines.withContex
  * - autoReportDelayMs 후 "119에 자동신고되었습니다"로 문구 전환
  * - 동일 사고 진행 중 중복 이벤트는 무시
  */
-class AccidentBannerController(
+class AccidentAlertController(
     private val lifecycleOwner: LifecycleOwner,
     private val context: Context,
     private val autoReportDelayMs: Long = 5_000L
@@ -91,6 +92,10 @@ class AccidentBannerController(
     private fun showInternal(text: String, color: String) {
         val parsed = Color.parseColor(color)
         val tv = messageView
+
+        // AlertDialog#setView 는 부모가 없는 뷰만 허용하므로 선행 분리
+        (tv.parent as? ViewGroup)?.removeView(tv)
+
         tv.text = text
         tv.setBackgroundColor(parsed)
 
@@ -98,7 +103,15 @@ class AccidentBannerController(
             .setView(tv)
             .setCancelable(true)
             .create()
-            .also { dialog = it }
+            .also { created ->
+                created.setOnDismissListener {
+                    dialog = null
+                    if (phase != Phase.REPORTED) {
+                        phase = Phase.IDLE
+                    }
+                }
+                dialog = created
+            }
 
         dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dlg.setCanceledOnTouchOutside(true)
@@ -110,6 +123,7 @@ class AccidentBannerController(
 
     private fun hide() {
         val action = {
+            dialog?.setOnDismissListener(null)
             dialog?.dismiss()
             dialog = null
         }

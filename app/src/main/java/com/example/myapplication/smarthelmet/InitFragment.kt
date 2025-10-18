@@ -1,22 +1,12 @@
 package com.example.myapplication.smarthelmet
 
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.Typeface
 import android.os.Bundle
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewGroup.MarginLayoutParams
 import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.constraintlayout.widget.ConstraintSet
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -30,7 +20,7 @@ import kotlinx.coroutines.launch
 // ★ 라즈베리파이 HTTP 폴링 (사고 상태)
 import com.example.myapplication.smarthelmet.accident.SagoStatusPoller
 // ★ 사고 배너 컨트롤러 (30초 후 자동 “119에 자동신고되었습니다”로 변경)
-import com.example.myapplication.smarthelmet.accident.AccidentBannerController
+import com.example.myapplication.smarthelmet.accident.AccidentAlertController
 import com.example.myapplication.smarthelmet.RearCamDetectionManager
 
 class InitFragment : Fragment() {
@@ -38,8 +28,6 @@ class InitFragment : Fragment() {
     private lateinit var btnUse: Button
     private lateinit var btnReturn: Button
     private lateinit var wifiClient: WifiCommandClient
-
-    private lateinit var txtAccidentBanner: TextView
 
     // 진행 감시 Job (대여/반납 공용)
     private var watchJob: Job? = null
@@ -57,10 +45,9 @@ class InitFragment : Fragment() {
 
     // ★ 라즈베리파이 사고 상태 폴링
     private var sagoPoller: SagoStatusPoller? = null
-    private var autoHideJob: Job? = null
 
     // ★ 배너 문구 자동 전환 컨트롤러
-    private var bannerController: AccidentBannerController? = null
+    private var bannerController: AccidentAlertController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
         inflater.inflate(R.layout.fragment_init, container, false)
@@ -76,13 +63,10 @@ class InitFragment : Fragment() {
         btnUse.setOnClickListener { startUseFlow() }
         btnReturn.setOnClickListener { startReturnFlow() }
 
-        // 공통 배너(상단) - 레이아웃 타입별로 안전하게 추가
-        addAccidentBannerSafely(view as ViewGroup)
-
         // ★ 배너 컨트롤러 생성 (사고 감지 즉시 표출 → 30초 후 자동 ‘119에 자동신고되었습니다’)
-        bannerController = AccidentBannerController(
+        bannerController = AccidentAlertController(
             lifecycleOwner = viewLifecycleOwner,
-            bannerView = txtAccidentBanner,
+            context = requireContext(),
             autoReportDelayMs = 5_000L
         )
     }
@@ -112,9 +96,6 @@ class InitFragment : Fragment() {
         // ★ 정리: 폴러 & 배너 타이머
         sagoPoller?.stop()
         sagoPoller = null
-
-        autoHideJob?.cancel()
-        autoHideJob = null
 
         bannerController?.dispose()
         bannerController = null
@@ -399,84 +380,4 @@ class InitFragment : Fragment() {
     }
 
     // ---- 레이아웃 타입별 안전 배너 삽입 ----
-    private fun addAccidentBannerSafely(root: ViewGroup) {
-        if (root.id == View.NO_ID) root.id = View.generateViewId()
-
-        txtAccidentBanner = TextView(requireContext()).apply {
-            id = View.generateViewId()
-            text = "사고가 감지되었습니다"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            setBackgroundColor(Color.parseColor("#CCFF3333"))
-            gravity = Gravity.CENTER
-            elevation = 10f
-            visibility = View.GONE
-            isClickable = false
-            isFocusable = false
-        }
-
-        when (root) {
-            is ConstraintLayout -> {
-                val lp = ConstraintLayout.LayoutParams(
-                    0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = dp(24)
-                    marginStart = dp(16)
-                    marginEnd = dp(16)
-                }
-                root.addView(txtAccidentBanner, lp)
-                ConstraintSet().apply {
-                    clone(root)
-                    connect(txtAccidentBanner.id, ConstraintSet.TOP, root.id, ConstraintSet.TOP)
-                    connect(txtAccidentBanner.id, ConstraintSet.START, root.id, ConstraintSet.START)
-                    connect(txtAccidentBanner.id, ConstraintSet.END, root.id, ConstraintSet.END)
-                    applyTo(root)
-                }
-            }
-            is FrameLayout -> {
-                val lp = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.TOP
-                ).apply { setMargins(dp(16), dp(24), dp(16), 0) }
-                root.addView(txtAccidentBanner, lp)
-            }
-            is LinearLayout -> {
-                val lp = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(dp(16), dp(24), dp(16), 0) }
-                root.addView(txtAccidentBanner, 0, lp)
-            }
-            else -> {
-                val lp = MarginLayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(dp(16), dp(24), dp(16), 0) }
-                root.addView(txtAccidentBanner, lp)
-            }
-        }
-    }
-
-    // (옵션) 6초 자동 숨김 유틸 — 다른 곳에서 쓸 수 있어 남겨둠
-    private fun showAccidentBanner(text: String) {
-        txtAccidentBanner.text = text
-        txtAccidentBanner.visibility = View.VISIBLE
-        txtAccidentBanner.alpha = 0f
-        txtAccidentBanner.animate().alpha(1f).setDuration(180).start()
-
-        autoHideJob?.cancel()
-        autoHideJob = viewLifecycleOwner.lifecycleScope.launch {
-            delay(6000)
-            txtAccidentBanner.visibility = View.GONE
-        }
-    }
-
-    private fun dp(v: Int): Int {
-        val d = resources.displayMetrics.density
-        return (v * d + 0.5f).toInt()
-    }
 }

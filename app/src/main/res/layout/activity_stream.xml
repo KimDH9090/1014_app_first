@@ -18,13 +18,6 @@
         app:title="스트리밍"
         app:menu="@menu/menu_stream" />
 
-    <!-- 🚨 사고 감지 배너 include (최상단, 영상 위) -->
-    <include
-        android:id="@+id/banner_include"
-        layout="@layout/view_accident_banner"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
-
     <!-- 영상 + 오버레이 + FAB -->
     <FrameLayout
         android:id="@+id/stream_container"

@@ -6,20 +6,12 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- 🚨 공용 배너 include -->
-    <include
-        android:id="@+id/banner_include"
-        layout="@layout/view_accident_banner"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
     <Button
         android:id="@+id/btnUse"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="사용"
-        app:layout_constraintTop_toBottomOf="@id/banner_include"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="100dp" />

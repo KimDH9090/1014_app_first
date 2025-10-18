@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.view.ViewGroup
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -35,13 +34,8 @@ import androidx.media3.ui.PlayerView
 
 // 사고 폴링
 import com.example.myapplication.smarthelmet.accident.SagoStatusPoller
-// 동적 배너 추가/제약용
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.constraintlayout.widget.ConstraintSet
-import android.graphics.Color
-import android.util.TypedValue
 // 사고 배너 컨트롤러 (5초 후 자동 ‘119에 자동신고되었습니다’)
-import com.example.myapplication.smarthelmet.accident.AccidentBannerController
+import com.example.myapplication.smarthelmet.accident.AccidentAlertController
 
 class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
 
@@ -67,13 +61,11 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
     private var sentUnlockGo2 = false
     private var sentLockGo2 = false
 
-    // 사고 배너 & 폴러
-    private var txtAccidentBanner: TextView? = null
+    // 사고 알림 풀러
     private var sagoPoller: SagoStatusPoller? = null
-    private var autoHideBannerJob: Job? = null
 
     // 배너 문구 자동 전환 컨트롤러 (5초 후 119)
-    private var bannerController: AccidentBannerController? = null
+    private var bannerController: AccidentAlertController? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -84,53 +76,10 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         playerView = view.findViewById(R.id.playerView)
         loadingIndicator = view.findViewById(R.id.loadingIndicator)
 
-        // ✅ include 로 들어온 배너를 최우선으로 사용
-        txtAccidentBanner = view.findViewById(R.id.txtAccidentBanner)
-        if (txtAccidentBanner == null) {
-            // include가 없다면(예외 케이스) 그때만 동적 생성
-            val root = view.findViewById<ViewGroup>(R.id.rideGuideRoot)
-            val banner = TextView(requireContext()).apply {
-                id = View.generateViewId()
-                text = "사고가 감지되었습니다"
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                setBackgroundColor(Color.parseColor("#CCFF3333"))
-                elevation = 24f
-                translationZ = 24f
-                visibility = View.GONE
-                isClickable = false
-                isFocusable = false
-            }
-            if (root is ConstraintLayout) {
-                val lp = ConstraintLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-                root.addView(banner, lp)
-                ConstraintSet().apply {
-                    clone(root)
-                    connect(banner.id, ConstraintSet.TOP, root.id, ConstraintSet.TOP)
-                    connect(banner.id, ConstraintSet.START, root.id, ConstraintSet.START)
-                    connect(banner.id, ConstraintSet.END, root.id, ConstraintSet.END)
-                    applyTo(root)
-                }
-            } else {
-                root.addView(banner, 0)
-            }
-            txtAccidentBanner = banner
-        }
-
-        // ✅ 스트리밍 화면 진입 시점에 배너 내용/가시성 초기화 (구버전 잔여 텍스트/타임스탬프 제거)
-        txtAccidentBanner?.apply {
-            text = "사고가 감지되었습니다" // 기본 문구
-            visibility = View.GONE
-            bringToFront()
-        }
-
         // ✅ 컨트롤러: 5초 후 자동 119 문구
-        bannerController = AccidentBannerController(
+        bannerController = AccidentAlertController(
             lifecycleOwner = viewLifecycleOwner,
-            bannerView = requireNotNull(txtAccidentBanner),
+            context = requireContext(),
             autoReportDelayMs = 5_000L
         )
 
@@ -430,11 +379,6 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
 
         // ✅ 스트리밍 화면 진입 시 컨트롤러 상태 리셋(이전 화면 잔상/텍스트 방지)
         bannerController?.reset()
-        txtAccidentBanner?.apply {
-            text = "사고가 감지되었습니다"
-            visibility = View.GONE
-            bringToFront()
-        }
 
         // 라즈베리파이 사고 상태 폴링 시작 (포트 5001: /accident/status)
         val baseUrlSago = "http://10.42.0.1:5001"
@@ -455,9 +399,6 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         // 정리
         sagoPoller?.stop()
         sagoPoller = null
-        autoHideBannerJob?.cancel()
-        autoHideBannerJob = null
-
         bannerController?.dispose()
         bannerController = null
     }
@@ -481,25 +422,4 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         webView = null
     }
 
-    // (기존) 배너 표시 유틸 — 다른 경로에서 쓸 수 있어 남겨둠
-    private fun showAccidentBanner(text: String) {
-        val banner = txtAccidentBanner ?: return
-        banner.text = text
-        banner.visibility = View.VISIBLE
-        banner.alpha = 0f
-        banner.bringToFront()
-        banner.animate().alpha(1f).setDuration(180).start()
-
-        autoHideBannerJob?.cancel()
-        autoHideBannerJob = viewLifecycleOwner.lifecycleScope.launch {
-            delay(6000)
-            banner.visibility = View.GONE
-        }
-    }
-
-    // dp 유틸
-    private fun dp(v: Int): Int {
-        val d = resources.displayMetrics.density
-        return (v * d + 0.5f).toInt()
-    }
 }
