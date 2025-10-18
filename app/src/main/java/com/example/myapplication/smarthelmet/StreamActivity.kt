@@ -173,6 +173,8 @@ class StreamActivity : AppCompatActivity() {
 
         // 전면: 라이트 차선 가이드 활성화
         processor = LaneProcessorLite()
+        // 전면 시작 시 후면 박스 대신 차선만 보이도록 기존 박스/선 상태 초기화
+        clearRearDetections()
         startStream(url)
         renderRearDetections()
     }
@@ -189,6 +191,7 @@ class StreamActivity : AppCompatActivity() {
 
         // 후면: 일단 처리 비활성
         processor = null
+        clearLaneOverlay()
         startStream(url)
         renderRearDetections()
     }
@@ -206,6 +209,7 @@ class StreamActivity : AppCompatActivity() {
 
         // USB 기타: 기본 비활성
         processor = null
+        clearLaneOverlay()
         startStream(url)
         renderRearDetections()
     }
@@ -258,6 +262,15 @@ class StreamActivity : AppCompatActivity() {
             result == null || result.detections.isEmpty() -> View.INVISIBLE
             else -> View.VISIBLE
         }
+    }
+
+    private fun clearLaneOverlay() {
+        vb.overlay.submit(null)
+    }
+
+    private fun clearRearDetections() {
+        rearOverlay?.submit(null)
+        rearOverlay?.visibility = View.GONE
     }
 
     private fun setSubtitle(text: String) {
