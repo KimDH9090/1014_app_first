@@ -17,10 +17,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-// ★ 라즈베리파이 HTTP 폴링 (사고 상태)
-import com.example.myapplication.smarthelmet.accident.SagoStatusPoller
-// ★ 사고 배너 컨트롤러 (30초 후 자동 “119에 자동신고되었습니다”로 변경)
-import com.example.myapplication.smarthelmet.accident.AccidentAlertController
 import com.example.myapplication.smarthelmet.RearCamDetectionManager
 
 class InitFragment : Fragment() {
@@ -43,11 +39,6 @@ class InitFragment : Fragment() {
     private var sentLockGo2 = false
     private var seenLockBack1 = false
 
-    // ★ 라즈베리파이 사고 상태 폴링
-    private var sagoPoller: SagoStatusPoller? = null
-    // ★ 배너 문구 자동 전환 컨트롤러
-    private var bannerController: AccidentAlertController? = null
-
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
         inflater.inflate(R.layout.fragment_init, container, false)
 
@@ -62,52 +53,6 @@ class InitFragment : Fragment() {
         btnUse.setOnClickListener { startUseFlow() }
         btnReturn.setOnClickListener { startReturnFlow() }
 
-        // ★ 사고 팝업 컨트롤러 생성 (사고 감지 즉시 표출 → 30초 후 자동 신고 안내)
-        bannerController = AccidentAlertController(
-            lifecycleOwner = viewLifecycleOwner,
-            context = requireContext(),
-            autoReportDelayMs = 30_000L,
-            onRequirePause = { sagoPoller?.pause() },
-            onAllowResume = { sagoPoller?.resume() }
-        )
-    }
-
-    override fun onStart() {
-        super.onStart()
-
-        // 기존 팝업 상태 초기화
-        bannerController?.reset()
-
-        // ★ 라즈베리파이 사고 상태 폴링 시작 (HTTP: http://10.42.0.1:5001/accident/status)
-        val baseUrl = "http://10.42.0.1:5001"
-        sagoPoller = SagoStatusPoller(viewLifecycleOwner.lifecycleScope, baseUrl, intervalMs = 1000L).also { poller ->
-            poller.start(
-                onNewSago = { ts ->
-                    if (!isAdded) return@start
-                    // 컨트롤러로 팝업 전환(30초 후 자동 신고 안내)
-                    bannerController?.onAccident(ts)
-                },
-                onError = {
-                    // 필요시 로그/토스트 추가 가능
-                }
-            )
-        }
-    }
-
-    override fun onStop() {
-        super.onStop()
-
-        // ★ 정리: 폴러 & 배너 타이머
-        sagoPoller?.stop()
-        sagoPoller = null
-
-        bannerController?.dispose()
-    }
-
-    override fun onDestroyView() {
-        bannerController?.dispose()
-        bannerController = null
-        super.onDestroyView()
     }
 
     // =========================

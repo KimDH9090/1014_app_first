@@ -2,6 +2,8 @@ package com.example.myapplication.smarthelmet.accident
 
 import android.content.Context
 import android.os.Looper
+import android.view.Gravity
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -11,6 +13,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.max
 
 /**
  * 사고 알림 팝업 컨트롤러
@@ -30,6 +33,7 @@ class AccidentAlertController(
 
     private var phase: Phase = Phase.IDLE
     private var dialog: AlertDialog? = null
+    private var messageView: TextView? = null
     private var timerJob: Job? = null
 
     /** 새 사고 타임스탬프 수신 시 호출 */
@@ -39,7 +43,6 @@ class AccidentAlertController(
 
         phase = Phase.ALERT
         onRequirePause.invoke()
-        scheduleAutoReport()
         showAlertDialog()
     }
 
@@ -52,21 +55,18 @@ class AccidentAlertController(
         resetInternal(resumePolling = true)
     }
 
-    private fun scheduleAutoReport() {
-        timerJob?.cancel()
-        timerJob = lifecycleOwner.lifecycleScope.launch {
-            delay(autoReportDelayMs)
-            if (phase == Phase.ALERT && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-                withContext(Dispatchers.Main) { showReportDialog() }
-            }
-        }
-    }
-
     private fun showAlertDialog() {
         runOnMain {
             dismissDialog()
+            val msgView = TextView(context).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(24), dp(16), dp(24), dp(8))
+                textSize = 18f
+            }
+            messageView = msgView
             val dlg = AlertDialog.Builder(context)
-                .setMessage("사고가 감지되었습니다")
+                .setTitle("사고 알림")
+                .setView(msgView)
                 .setPositiveButton("사고 아님", null)
                 .setCancelable(false)
                 .create()
@@ -86,15 +86,18 @@ class AccidentAlertController(
 
             dialog = dlg
             dlg.show()
+            startAlertCountdown()
         }
     }
 
     private fun showReportDialog() {
+        timerJob?.cancel()
         phase = Phase.REPORT
         runOnMain {
             dismissDialog()
             val dlg = AlertDialog.Builder(context)
-                .setMessage("119 신고")
+                .setTitle("119 신고")
+                .setMessage("30초 동안 응답이 없어 119에 신고합니다.")
                 .setPositiveButton("확인", null)
                 .setCancelable(false)
                 .create()
@@ -139,6 +142,7 @@ class AccidentAlertController(
         dialog?.setOnDismissListener(null)
         dialog?.dismiss()
         dialog = null
+        messageView = null
     }
 
     private fun runOnMain(block: () -> Unit) {
@@ -147,5 +151,33 @@ class AccidentAlertController(
         } else {
             lifecycleOwner.lifecycleScope.launch(Dispatchers.Main) { block() }
         }
+    }
+
+    private fun startAlertCountdown() {
+        timerJob?.cancel()
+        updateAlertMessage(autoReportDelayMs)
+        timerJob = lifecycleOwner.lifecycleScope.launch {
+            var remainingMs = autoReportDelayMs
+            while (phase == Phase.ALERT && remainingMs > 0 && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                withContext(Dispatchers.Main) { updateAlertMessage(remainingMs) }
+                val step = max(250L, minOf(1000L, remainingMs))
+                delay(step)
+                remainingMs -= step
+            }
+            if (phase == Phase.ALERT && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                withContext(Dispatchers.Main) { showReportDialog() }
+            }
+        }
+    }
+
+    private fun updateAlertMessage(remainingMs: Long) {
+        val seconds = ((remainingMs + 999) / 1000).coerceAtLeast(0L).toInt()
+        val text = "사고가 감지되었습니다\n자동 신고까지 ${seconds}초 남았습니다."
+        messageView?.text = text
+    }
+
+    private fun dp(value: Int): Int {
+        val density = context.resources.displayMetrics.density
+        return (value * density + 0.5f).toInt()
     }
 }
