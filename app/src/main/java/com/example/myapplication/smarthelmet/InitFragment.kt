@@ -75,6 +75,9 @@ class InitFragment : Fragment() {
     override fun onStart() {
         super.onStart()
 
+        // 기존 팝업 상태 초기화
+        bannerController?.reset()
+
         // ★ 라즈베리파이 사고 상태 폴링 시작 (HTTP: http://10.42.0.1:5001/accident/status)
         val baseUrl = "http://10.42.0.1:5001"
         sagoPoller = SagoStatusPoller(viewLifecycleOwner.lifecycleScope, baseUrl, intervalMs = 1000L).also { poller ->
@@ -99,7 +102,12 @@ class InitFragment : Fragment() {
         sagoPoller = null
 
         bannerController?.dispose()
+    }
+
+    override fun onDestroyView() {
+        bannerController?.dispose()
         bannerController = null
+        super.onDestroyView()
     }
 
     // =========================

@@ -402,7 +402,6 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         sagoPoller?.stop()
         sagoPoller = null
         bannerController?.dispose()
-        bannerController = null
     }
 
     override fun onDestroyView() {
@@ -422,6 +421,9 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
             it.destroy()
         }
         webView = null
+
+        bannerController?.dispose()
+        bannerController = null
     }
 
 }

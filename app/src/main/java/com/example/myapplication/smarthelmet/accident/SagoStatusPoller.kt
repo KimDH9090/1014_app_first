@@ -21,6 +21,7 @@ class SagoStatusPoller(
 
     private var job: Job? = null
     @Volatile private var running = false
+    @Volatile private var paused = false
     private var lastSeenTs: String? = null
 
     fun start(
@@ -28,9 +29,14 @@ class SagoStatusPoller(
         onError: (Throwable) -> Unit = {}     // 네트워크 에러 등
     ) {
         if (running) return
+        paused = false
         running = true
         job = scope.launch(Dispatchers.IO) {
             while (running) {
+                if (paused) {
+                    delay(intervalMs)
+                    continue
+                }
                 try {
                     val req = Request.Builder()
                         .url("$baseUrl/accident/status")
@@ -61,5 +67,14 @@ class SagoStatusPoller(
         running = false
         job?.cancel()
         job = null
+        paused = false
+    }
+
+    fun pause() {
+        paused = true
+    }
+
+    fun resume() {
+        paused = false
     }
 }

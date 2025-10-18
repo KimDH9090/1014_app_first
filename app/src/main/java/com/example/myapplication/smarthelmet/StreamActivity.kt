@@ -156,6 +156,8 @@ class StreamActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         reader?.stop()
+        bannerController?.dispose()
+        bannerController = null
         super.onDestroy()
     }
 
