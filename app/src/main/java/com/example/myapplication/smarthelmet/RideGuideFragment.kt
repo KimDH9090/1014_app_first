@@ -323,12 +323,12 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         playerView?.visibility = View.GONE
         loadingIndicator.visibility = View.VISIBLE
 
-        val parent = playerView?.parent as? ViewGroup ?: return
+        val parent = playerView?.parent as? android.view.ViewGroup ?: return
         if (webView == null) {
             webView = WebView(requireContext()).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
+                layoutParams = android.view.ViewGroup.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
                 )
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
@@ -415,7 +415,7 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         player = null
 
         webView?.let {
-            (it.parent as? ViewGroup)?.removeView(it)
+            (it.parent as? android.view.ViewGroup)?.removeView(it)
             it.stopLoading()
             it.destroy()
         }
