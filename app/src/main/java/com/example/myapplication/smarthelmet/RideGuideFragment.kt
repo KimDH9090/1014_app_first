@@ -549,7 +549,7 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         }
         return null
     }
-
+//////
     private data class AccidentHistoryEntry(
         val tsIso: String,
         var status: Status,
