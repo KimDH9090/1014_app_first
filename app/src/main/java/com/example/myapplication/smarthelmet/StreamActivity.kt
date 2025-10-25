@@ -3,6 +3,8 @@ package com.example.myapplication.smarthelmet
 
 import android.content.SharedPreferences
 import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.graphics.RectF
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
@@ -17,26 +19,18 @@ import com.example.myapplication.databinding.ActivityStreamBinding
 import com.example.myapplication.smarthelmet.MjpegReader
 import com.example.myapplication.smarthelmet.ui.RearDetectionOverlayView
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
 
-import org.opencv.android.OpenCVLoader
-import org.opencv.android.Utils
-import org.opencv.core.*
-import org.opencv.imgproc.Imgproc
-
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.sign
-
 // 🚨 사고 폴링 + 팝업 컨트롤러
 import com.example.myapplication.smarthelmet.accident.SagoStatusPoller
 import com.example.myapplication.smarthelmet.accident.AccidentAlertController
 import com.example.myapplication.smarthelmet.RearCamDetectionManager
+import com.example.myapplication.smarthelmet.processing.LaneProcessorLite
 import com.example.myapplication.smarthelmet.record.RearCamDetectionEngine
 
 class StreamActivity : AppCompatActivity() {
@@ -57,28 +51,15 @@ class StreamActivity : AppCompatActivity() {
         get() = prefs.getInt("front_swap", 0)
         set(v) { prefs.edit { putInt("front_swap", if (v != 0) 1 else 0) } }
 
-    // 전면 차선 가이드용 처리 상태
-    private data class Track(var xb: Double, var xt: Double, var vb: Double = 0.0, var vt: Double = 0.0)
-    private var leftT: Track? = null
-    private var rightT: Track? = null
     private var lastProcMs: Long = 0L
     private var laneEnabled: Boolean = false
-    private val PROCESS_W = 640
-    private val ROI_TOP_RATIO = 0.35
-    private val BOTTOM_HIST_START = 0.70
-    private val CORRIDOR_W_RATIO = 0.06
-    private val CANNY_LOW = 60.0
-    private val CANNY_HIGH = 180.0
-    private val STEPS = 16
-    private val THICK = 4
-    private val ALPHA = 0.35
-    private val BETA = 0.15
-    private val MAX_STEP_RATIO = 0.04
-    private val MAX_SLOPE_DELTA = 0.0018
 
     private var rearOverlay: RearDetectionOverlayView? = null
     private var detectionCollectJob: Job? = null
     private var lastRearDetection: RearCamDetectionEngine.RearDetectionResult? = null
+
+    private var laneProcessingJob: Job? = null
+    private val laneProcessor = LaneProcessorLite()
 
     // 🚨 사고 알림 폴러
     private var sagoPoller: SagoStatusPoller? = null
@@ -98,8 +79,6 @@ class StreamActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences("stream_prefs", MODE_PRIVATE)
 
-        OpenCVLoader.initDebug()
-
         // 좌상단 홈 → 종료, 시스템 뒤로가기도 종료
         vb.toolbar.setNavigationOnClickListener { finish() }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -117,7 +96,7 @@ class StreamActivity : AppCompatActivity() {
             }
         }
 
-// ✅ 사고 팝업 컨트롤러(30초 후 자동 신고 안내)
+        // ✅ 사고 팝업 컨트롤러(30초 후 자동 신고 안내)
         alertController = AccidentAlertController(
             lifecycleOwner = this,
             context = this,
@@ -143,6 +122,9 @@ class StreamActivity : AppCompatActivity() {
         if (reader == null && !lastUrl.isNullOrBlank()) {
             startStream(lastUrl!!)
         }
+
+        // 최초 진입 시에도 객체 인식 엔진이 바로 실행되도록 보장한다.
+        RearCamDetectionManager.start(this)
 
         // ✅ 컨트롤러 리셋(이전 팝업 상태 초기화)
         alertController?.reset()
@@ -189,6 +171,7 @@ class StreamActivity : AppCompatActivity() {
         detectionCollectJob?.cancel(); detectionCollectJob = null
         rearOverlay?.submit(null)
         rearOverlay?.visibility = View.GONE
+        clearLaneOverlay()
 
         super.onStop()
     }
@@ -214,10 +197,8 @@ class StreamActivity : AppCompatActivity() {
         prefs.edit { putString("pi_ip", ip) }
         frontSwap = s
 
-        // 전면: OpenCV 기반 차선 가이드 활성화
+        // 전면 차선 가이드 활성화
         laneEnabled = true
-        leftT = null
-        rightT = null
         // 전면 시작 시 후면 박스 대신 차선만 보이도록 기존 박스/선 상태 초기화
         clearRearDetections()
         clearLaneOverlay()
@@ -226,11 +207,11 @@ class StreamActivity : AppCompatActivity() {
     }
 
     private fun startRear(ip: String) {
-        val url = "http://$ip:5000/rear"  // dev=2 별칭
-        setSubtitle("후면 dev=2 ($ip)")
+        val url = "http://$ip:5000/usb_feed?dev=0"
+        setSubtitle("후면 dev=0 ($ip)")
         lastIpOnly = ip
         currentCam = Cam.REAR
-        currentUsbDev = 2
+        currentUsbDev = 0
         PiEndpoint.saveHost(this, ip)
         RearCamDetectionManager.refreshIfRunning(this)
         prefs.edit { putString("pi_ip", ip) }
@@ -243,11 +224,11 @@ class StreamActivity : AppCompatActivity() {
     }
 
     private fun startUsb(ip: String, dev: Int) {
-        val url = if (dev == 2) "http://$ip:5000/rear"
-        else "http://$ip:5000/usb_feed?dev=$dev"
-        setSubtitle(if (dev == 2) "후면 dev=2 ($ip)" else "USB dev=$dev ($ip)")
+        val url = "http://$ip:5000/usb_feed?dev=$dev"
+        val isRear = dev == 0
+        setSubtitle(if (isRear) "후면 dev=0 ($ip)" else "USB dev=$dev ($ip)")
         lastIpOnly = ip
-        currentCam = if (dev == 2) Cam.REAR else Cam.USB_OTHER
+        currentCam = if (isRear) Cam.REAR else Cam.USB_OTHER
         currentUsbDev = dev
         PiEndpoint.saveHost(this, ip)
         RearCamDetectionManager.refreshIfRunning(this)
@@ -265,41 +246,61 @@ class StreamActivity : AppCompatActivity() {
         reader?.stop()
         lastUrl = url
         vb.tvStatus.text = "연결 준비: $url"
+        lastProcMs = 0L
 
-        val isFrontLane = laneEnabled && currentCam == Cam.FRONT
-        val targetView = if (isFrontLane) android.widget.ImageView(this).apply {
-            visibility = View.GONE
-        } else vb.ivStream
-
-        // onFrame 콜백에서 전면은 OpenCV로 차선 추적, 그 외에는 기본 렌더링 유지
+        // onFrame 콜백에서 전면은 경량 차선 인식 오버레이를 갱신하고, 모든 스트림은 180도 회전하여 표시한다.
         reader = MjpegReader(
             url = url,
-            target = targetView,
+            target = android.widget.ImageView(this).apply { visibility = View.GONE },
             scope = lifecycleScope,
             fpsCap = 30,
             autoReconnect = true,
             onFrame = { bmp ->
-                // 처리 FPS 제한(약 10fps)
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastProcMs < 80) return@MjpegReader
-                lastProcMs = now
+                val rotated = rotateBitmap180(bmp)
+                bmp.recycle()
 
-                if (isFrontLane) {
-                    lifecycleScope.launch(Dispatchers.Default) {
-                        val processed = try {
-                            val rotated = rotate180(bmp)
-                            detectLanesFast(rotated)
+                vb.ivStream.post { vb.ivStream.setImageBitmap(rotated) }
+
+                val shouldProcessLane = laneEnabled && currentCam == Cam.FRONT
+                if (shouldProcessLane) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastProcMs < 120) return@MjpegReader
+                    lastProcMs = now
+
+                    val sample = rotated.copy(Bitmap.Config.ARGB_8888, false)
+                    laneProcessingJob?.cancel()
+                    laneProcessingJob = lifecycleScope.launch(Dispatchers.Default) {
+                        try {
+                            val overlay = laneProcessor.processFrame(sample)
+                            withContext(Dispatchers.Main) {
+                                if (currentCam == Cam.FRONT && laneEnabled) {
+                                    if (overlay != null) {
+                                        vb.overlay.visibility = View.VISIBLE
+                                        vb.overlay.submit(overlay)
+                                    } else {
+                                        vb.overlay.submit(null)
+                                        vb.overlay.visibility = View.INVISIBLE
+                                    }
+                                }
+                            }
+                        } catch (ce: CancellationException) {
+                            throw ce
                         } catch (t: Throwable) {
                             t.printStackTrace()
-                            null
-                        }
-                        withContext(Dispatchers.Main) {
-                            processed?.let { vb.ivStream.setImageBitmap(it) }
+                        } finally {
+                            sample.recycle()
+                            if (laneProcessingJob === this@launch) {
+                                laneProcessingJob = null
+                            }
                         }
                     }
                 } else {
-                    val w = bmp.width
-                    val h = bmp.height
+                    vb.overlay.post {
+                        vb.overlay.submit(null)
+                        vb.overlay.visibility = View.GONE
+                    }
+                    val w = rotated.width
+                    val h = rotated.height
                     rearOverlay?.post {
                         rearOverlay?.updateSourceSize(w, h)
                     }
@@ -314,7 +315,7 @@ class StreamActivity : AppCompatActivity() {
     private fun renderRearDetections() {
         val overlay = rearOverlay ?: return
         val shouldShow = currentCam == Cam.REAR
-        val result = if (shouldShow) lastRearDetection else null
+        val result = if (shouldShow) lastRearDetection?.let { rotateDetections180(it) } else null
         overlay.submit(result)
         overlay.visibility = when {
             !shouldShow -> View.GONE
@@ -324,6 +325,8 @@ class StreamActivity : AppCompatActivity() {
     }
 
     private fun clearLaneOverlay() {
+        laneProcessingJob?.cancel()
+        laneProcessingJob = null
         vb.overlay.submit(null)
         vb.overlay.visibility = View.GONE
     }
@@ -363,10 +366,10 @@ class StreamActivity : AppCompatActivity() {
         val btnOk  = view.findViewById<android.widget.Button>(R.id.btnApply)
         val btnNo  = view.findViewById<android.widget.Button>(R.id.btnCancel)
 
-        // USB dev 목록(0,1,2) — 기본 2번
+        // USB dev 목록(0,1,2) — 기본 0번
         spUsb.adapter = ArrayAdapter(this,
             android.R.layout.simple_spinner_dropdown_item, listOf(0, 1, 2))
-        spUsb.setSelection(2)
+        spUsb.setSelection(0)
 
         // Front 색상 스왑(0/1)
         spSwap.adapter = ArrayAdapter(this,
@@ -394,7 +397,7 @@ class StreamActivity : AppCompatActivity() {
                 startFront(ip, swap)
             } else {
                 val dev = spUsb.selectedItem as Int
-                if (dev == 2) startRear(ip) else startUsb(ip, dev)
+                if (dev == 0) startRear(ip) else startUsb(ip, dev)
             }
             dlg.dismiss()
         }
@@ -403,209 +406,22 @@ class StreamActivity : AppCompatActivity() {
         dlg.show()
     }
 
-    private fun rotate180(srcBmp: Bitmap): Bitmap {
-        val src = Mat()
-        Utils.bitmapToMat(srcBmp, src)
-        val dst = Mat()
-        Core.rotate(src, dst, Core.ROTATE_180)
-        val out = Bitmap.createBitmap(dst.cols(), dst.rows(), Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(dst, out)
-        src.release()
-        dst.release()
-        return out
+    private fun rotateBitmap180(src: Bitmap): Bitmap {
+        val matrix = Matrix().apply { postRotate(180f, src.width / 2f, src.height / 2f) }
+        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
     }
 
-    private fun detectLanesFast(input: Bitmap): Bitmap {
-        val rgbaFull = Mat()
-        Utils.bitmapToMat(input, rgbaFull)
-        val bgrFull = Mat()
-        Imgproc.cvtColor(rgbaFull, bgrFull, Imgproc.COLOR_RGBA2BGR)
-
-        val scale = PROCESS_W.toDouble() / bgrFull.cols().toDouble()
-        val procH = max((bgrFull.rows() * scale).toInt(), 360)
-        val proc = Mat()
-        Imgproc.resize(bgrFull, proc, Size(PROCESS_W.toDouble(), procH.toDouble()))
-
-        val gray = Mat()
-        Imgproc.cvtColor(proc, gray, Imgproc.COLOR_BGR2GRAY)
-        Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
-
-        val edges = Mat()
-        Imgproc.Canny(gray, edges, CANNY_LOW, CANNY_HIGH)
-
-        val h = edges.rows().toDouble()
-        val w = edges.cols().toDouble()
-        val roiTop = h * ROI_TOP_RATIO
-        val roiMask = Mat.zeros(edges.size(), CvType.CV_8UC1)
-        val roi = MatOfPoint(
-            Point(0.0, h),
-            Point(w, h),
-            Point(w * 0.70, roiTop),
-            Point(w * 0.30, roiTop)
-        )
-        Imgproc.fillPoly(roiMask, listOf(roi), Scalar(255.0, 255.0, 255.0))
-        val roiEdges = Mat()
-        Core.bitwise_and(edges, roiMask, roiEdges)
-
-        val histY0 = (h * BOTTOM_HIST_START).toInt().coerceAtMost((h - 1.0).toInt())
-        val hist = DoubleArray(w.toInt()) { 0.0 }
-        for (y in histY0 until h.toInt()) {
-            var x = 0
-            while (x < w.toInt()) {
-                val v = roiEdges.get(y, x)
-                if (v != null && v[0] > 0.0) hist[x] += 1.0
-                x++
-            }
+    private fun rotateDetections180(result: RearCamDetectionEngine.RearDetectionResult): RearCamDetectionEngine.RearDetectionResult {
+        val rotated = result.detections.map { det ->
+            val box = det.box
+            val rotatedBox = RectF(
+                1f - box.right,
+                1f - box.bottom,
+                1f - box.left,
+                1f - box.top,
+            )
+            det.copy(box = rotatedBox)
         }
-        val midX = (w * 0.5).toInt()
-        var lPeak = 0
-        var lVal = -1.0
-        for (x in 0 until midX) if (hist[x] > lVal) {
-            lVal = hist[x]
-            lPeak = x
-        }
-        var rPeak = midX
-        var rVal = -1.0
-        for (x in midX until w.toInt()) if (hist[x] > rVal) {
-            rVal = hist[x]
-            rPeak = x
-        }
-        val corridor = (w * CORRIDOR_W_RATIO).toInt().coerceAtLeast(8)
-        val corridorMask = Mat.zeros(roiEdges.size(), CvType.CV_8UC1)
-        Imgproc.rectangle(
-            corridorMask,
-            Point((lPeak - corridor).toDouble(), roiTop),
-            Point((lPeak + corridor).toDouble(), h),
-            Scalar(255.0, 255.0, 255.0),
-            -1
-        )
-        Imgproc.rectangle(
-            corridorMask,
-            Point((rPeak - corridor).toDouble(), roiTop),
-            Point((rPeak + corridor).toDouble(), h),
-            Scalar(255.0, 255.0, 255.0),
-            -1
-        )
-        val eCorridor = Mat()
-        Core.bitwise_and(roiEdges, corridorMask, eCorridor)
-
-        val lsd = Imgproc.createLineSegmentDetector(Imgproc.LSD_REFINE_STD)
-        val lines = Mat()
-        lsd.detect(eCorridor, lines)
-
-        val yTop = roiTop
-        val yBot = h
-        val leftBottomXs = ArrayList<Double>()
-        val leftTopXs = ArrayList<Double>()
-        val rightBottomXs = ArrayList<Double>()
-        val rightTopXs = ArrayList<Double>()
-
-        for (r in 0 until lines.rows()) {
-            val v = lines.get(r, 0) ?: continue
-            val x1 = v[0].toDouble()
-            val y1 = v[1].toDouble()
-            val x2 = v[2].toDouble()
-            val y2 = v[3].toDouble()
-            val dx = x2 - x1
-            val dy = y2 - y1
-            if (abs(dy) < abs(dx) * 1.6) continue
-            val k = dx / dy
-            val b = x1 - k * y1
-            val xAtTop = k * yTop + b
-            val xAtBot = k * yBot + b
-            if (xAtBot < w * 0.5) {
-                leftBottomXs.add(xAtBot)
-                leftTopXs.add(xAtTop)
-            } else {
-                rightBottomXs.add(xAtBot)
-                rightTopXs.add(xAtTop)
-            }
-        }
-
-        fun median(list: List<Double>): Double {
-            if (list.isEmpty()) return Double.NaN
-            val s = list.sorted()
-            val m = s.size / 2
-            return if (s.size % 2 == 1) s[m] else (s[m - 1] + s[m]) / 2.0
-        }
-
-        val measL = Pair(median(leftBottomXs), median(leftTopXs))
-        val measR = Pair(median(rightBottomXs), median(rightTopXs))
-
-        fun updateTrack(track: Track?, meas: Pair<Double, Double>, imgW: Double): Track? {
-            var (zb, zt) = meas
-            if (zb.isNaN() || zt.isNaN()) return track
-            if (track == null) return Track(zb, zt)
-            var pb = track.xb + track.vb
-            var pt = track.xt + track.vt
-            val rb = zb - pb
-            val rt = zt - pt
-            val vb = track.vb + BETA * rb
-            val vt = track.vt + BETA * rt
-            var xb = pb + ALPHA * rb
-            var xt = pt + ALPHA * rt
-            val maxStep = imgW * MAX_STEP_RATIO
-            val db = xb - track.xb
-            if (abs(db) > maxStep) xb = track.xb + maxStep * sign(db)
-            val kPrev = (track.xb - track.xt) / (yBot - yTop + 1e-6)
-            var kNew = (xb - xt) / (yBot - yTop + 1e-6)
-            val dk = kNew - kPrev
-            if (abs(dk) > MAX_SLOPE_DELTA) {
-                kNew = kPrev + MAX_SLOPE_DELTA * sign(dk)
-                xt = xb - kNew * (yBot - yTop)
-            }
-            return Track(xb, xt, vb, vt)
-        }
-
-        leftT = updateTrack(leftT, measL, w)
-        rightT = updateTrack(rightT, measR, w)
-
-        fun kbFromTrack(t: Track?): Pair<Double, Double>? {
-            if (t == null) return null
-            val k = (t.xb - t.xt) / (yBot - yTop + 1e-6)
-            val b = t.xb - k * yBot
-            return Pair(k, b)
-        }
-        val leftKB = kbFromTrack(leftT)
-        val rightKB = kbFromTrack(rightT)
-
-        val overlayFull = bgrFull.clone()
-        val color = Scalar(0.0, 255.0, 0.0)
-
-        fun drawModel(kb: Pair<Double, Double>?) {
-            if (kb == null) return
-            val (k, b) = kb
-            val ys = DoubleArray(STEPS + 1) { i ->
-                val yProc = roiTop + (h - roiTop) * (i.toDouble() / STEPS.toDouble())
-                (yProc / scale)
-            }
-            for (j in 0 until STEPS) {
-                val y1p = roiTop + (h - roiTop) * (j.toDouble() / STEPS.toDouble())
-                val y2p = roiTop + (h - roiTop) * ((j + 1).toDouble() / STEPS.toDouble())
-                val x1p = k * y1p + b
-                val x2p = k * y2p + b
-                val x1f = (x1p / scale)
-                val x2f = (x2p / scale)
-                val p1 = Point(
-                    min(max(x1f, 0.0), bgrFull.cols() - 1.0),
-                    min(max(ys[j], 0.0), bgrFull.rows() - 1.0)
-                )
-                val p2 = Point(
-                    min(max(x2f, 0.0), bgrFull.cols() - 1.0),
-                    min(max(ys[j + 1], 0.0), bgrFull.rows() - 1.0)
-                )
-                Imgproc.line(overlayFull, p1, p2, color, THICK, Imgproc.LINE_AA)
-            }
-        }
-        drawModel(leftKB)
-        drawModel(rightKB)
-
-        val outBmp = Bitmap.createBitmap(overlayFull.cols(), overlayFull.rows(), Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(overlayFull, outBmp)
-
-        listOf(rgbaFull, bgrFull, proc, gray, edges, roiMask, roiEdges, corridorMask, eCorridor, overlayFull, lines)
-            .forEach { it.release() }
-        return outBmp
+        return result.copy(detections = rotated)
     }
-
 }

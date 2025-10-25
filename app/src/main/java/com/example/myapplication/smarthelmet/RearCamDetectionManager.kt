@@ -24,7 +24,7 @@ object RearCamDetectionManager {
         val appCtx = context.applicationContext
         val running = job?.isActive == true
         if (running) return
-        val url = PiEndpoint.streamHttpUrl(appCtx, "/usb_feed?dev=2")
+        val url = PiEndpoint.streamHttpUrl(appCtx, "/usb_feed?dev=0")
         val engine = RearCamDetectionEngine(appCtx.assets)
         job = scope.launch {
             try {
