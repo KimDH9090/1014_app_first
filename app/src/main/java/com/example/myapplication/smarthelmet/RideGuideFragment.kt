@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -18,6 +19,7 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.R
+import androidx.core.view.isVisible
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import org.json.JSONObject
@@ -25,6 +27,10 @@ import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.ParseException
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 // Media3
 import androidx.media3.common.MediaItem
@@ -49,10 +55,13 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
     private var player: ExoPlayer? = null
     private var playerView: PlayerView? = null
     private var webView: WebView? = null
+    private var accidentHistoryCard: View? = null
+    private var accidentHistoryText: TextView? = null
     private lateinit var loadingIndicator: View
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var didStartPlayback = false
+    private var lastAccidentErrorAt: Long = 0L
 
     // --- HTTP API (포트 8000) ---
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -67,6 +76,8 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
     // 사고 알림 팝업 컨트롤러 (30초 후 자동 신고 안내)
     private var bannerController: AccidentAlertController? = null
 
+    private val accidentHistory = mutableListOf<AccidentHistoryEntry>()
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -75,6 +86,9 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         txtStatus = view.findViewById(R.id.txtAccel)
         playerView = view.findViewById(R.id.playerView)
         loadingIndicator = view.findViewById(R.id.loadingIndicator)
+        accidentHistoryCard = view.findViewById(R.id.accidentHistoryCard)
+        accidentHistoryText = view.findViewById(R.id.txtAccidentHistory)
+        refreshAccidentHistory()
 
         // 사고 알림 팝업 컨트롤러 (30초 후 자동 신고 안내)
         bannerController = AccidentAlertController(
@@ -82,8 +96,8 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
             context = requireContext(),
             autoReportDelayMs = 30_000L,
             onRequirePause = { sagoPoller?.pause() },
-            onAllowResume = { sagoPoller?.resume() }
-        )
+            onAllowResume = { sagoPoller?.resume() },
+            onHandled = { ts -> markAccidentHandled(ts) }        )
 
         // --- 호스트/포트 구성 ---
         val apiBase = PiEndpoint.httpBase(
@@ -387,9 +401,18 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
         sagoPoller = SagoStatusPoller(viewLifecycleOwner.lifecycleScope, baseUrlSago, 1000L).also { poller ->
             poller.start(
                 onNewSago = { ts ->
+                    recordAccidentEvent(ts)
                     // ✅ 팝업 표시 및 30초 후 자동 신고 알림 전환
                     bannerController?.onAccident(ts)
-                }
+                },
+                onError = { err ->
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastAccidentErrorAt > 5000) {
+                        lastAccidentErrorAt = now
+                        toast("사고 상태 확인 실패: ${err.localizedMessage ?: err.javaClass.simpleName}")
+                    }
+                },
+                onSuppressed = { ts -> recordAccidentSuppressed(ts) }
             )
         }
     }
@@ -424,6 +447,118 @@ class RideGuideFragment : Fragment(R.layout.fragment_ride_guide) {
 
         bannerController?.dispose()
         bannerController = null
+
+        accidentHistoryCard = null
+        accidentHistoryText = null
     }
 
+
+    private fun recordAccidentEvent(tsIsoUtc: String) {
+        val existing = accidentHistory.firstOrNull { it.tsIso == tsIsoUtc }
+        if (existing != null) {
+            existing.status = AccidentHistoryEntry.Status.PENDING
+            existing.updatedAt = System.currentTimeMillis()
+        } else {
+            accidentHistory.add(AccidentHistoryEntry(tsIsoUtc, AccidentHistoryEntry.Status.PENDING))
+        }
+        enforceAccidentHistoryLimit()
+        refreshAccidentHistory()
+    }
+
+    private fun recordAccidentSuppressed(tsIsoUtc: String) {
+        val entry = accidentHistory.firstOrNull { it.tsIso == tsIsoUtc }
+        if (entry != null) {
+            entry.status = AccidentHistoryEntry.Status.SUPPRESSED
+            entry.updatedAt = System.currentTimeMillis()
+        } else {
+            accidentHistory.add(AccidentHistoryEntry(tsIsoUtc, AccidentHistoryEntry.Status.SUPPRESSED))
+        }
+        enforceAccidentHistoryLimit()
+        refreshAccidentHistory()
+    }
+
+    private fun markAccidentHandled(tsIsoUtc: String) {
+        val entry = accidentHistory.firstOrNull { it.tsIso == tsIsoUtc }
+        if (entry != null) {
+            entry.status = AccidentHistoryEntry.Status.HANDLED
+            entry.updatedAt = System.currentTimeMillis()
+        } else {
+            accidentHistory.add(AccidentHistoryEntry(tsIsoUtc, AccidentHistoryEntry.Status.HANDLED))
+        }
+        enforceAccidentHistoryLimit()
+        refreshAccidentHistory()
+    }
+
+    private fun enforceAccidentHistoryLimit() {
+        if (accidentHistory.size <= MAX_ACCIDENT_HISTORY) return
+        val sorted = accidentHistory.sortedByDescending { it.updatedAt }
+        accidentHistory.clear()
+        accidentHistory.addAll(sorted.take(MAX_ACCIDENT_HISTORY))
+    }
+
+    private fun refreshAccidentHistory() {
+        val card = accidentHistoryCard ?: return
+        val textView = accidentHistoryText
+        val items = accidentHistory
+            .sortedByDescending { it.updatedAt }
+            .take(MAX_ACCIDENT_HISTORY)
+        card.isVisible = items.isNotEmpty()
+        if (items.isEmpty()) {
+            textView?.text = getString(R.string.accident_history_empty)
+            return
+        }
+        val formatted = items.joinToString("\n") { entry ->
+            val ts = formatAccidentTimestamp(entry.tsIso)
+            val status = when (entry.status) {
+                AccidentHistoryEntry.Status.PENDING -> getString(R.string.accident_history_status_pending)
+                AccidentHistoryEntry.Status.HANDLED -> getString(R.string.accident_history_status_handled)
+                AccidentHistoryEntry.Status.SUPPRESSED -> getString(R.string.accident_history_status_suppressed)
+            }
+            "$ts · $status"
+        }
+        textView?.text = formatted
+    }
+
+    private fun formatAccidentTimestamp(tsIsoUtc: String): String {
+        val date = parseIsoTimestamp(tsIsoUtc)
+        return if (date != null) {
+            SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()).apply {
+                timeZone = TimeZone.getDefault()
+            }.format(date)
+        } else {
+            tsIsoUtc
+        }
+    }
+
+    private fun parseIsoTimestamp(tsIsoUtc: String): java.util.Date? {
+        val patterns = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+            "yyyy-MM-dd'T'HH:mm:ssXXX"
+        )
+        for (pattern in patterns) {
+            val sdf = SimpleDateFormat(pattern, Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            try {
+                return sdf.parse(tsIsoUtc)
+            } catch (_: ParseException) {
+                // try next
+            }
+        }
+        return null
+    }
+
+    private data class AccidentHistoryEntry(
+        val tsIso: String,
+        var status: Status,
+        var updatedAt: Long = System.currentTimeMillis()
+    ) {
+        enum class Status { PENDING, HANDLED, SUPPRESSED }
+    }
+
+    private companion object {
+        private const val MAX_ACCIDENT_HISTORY = 5
+    }
 }
